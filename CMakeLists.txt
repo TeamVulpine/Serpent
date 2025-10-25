@@ -17,6 +17,7 @@ endif()
 
 target_include_directories(serpent PUBLIC include)
 target_compile_features(serpent PUBLIC cxx_std_23)
+target_compile_definitions(serpent PRIVATE SERPENT_EXPORTS)
 
 file(GLOB_RECURSE SERPENT_TEST_SOURCES
     CONFIGURE_DEPENDS
