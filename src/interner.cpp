@@ -1,0 +1,142 @@
+#include <algorithm>
+#include <functional>
+#include <mutex>
+#include <shared_mutex>
+#include <string_view>
+
+#include "serpent/interner.hpp"
+
+Serpent::Interner &Serpent::Interner::Instance() {
+    static Interner value {};
+
+    return value;
+}
+
+Serpent::Interner::Value::Value(std::string_view view) {
+    auto tmpData = new char[view.length() + 1];
+    std::copy(view.begin(), view.end(), tmpData);
+    tmpData[view.length()] = 0;
+
+    data = tmpData;
+    size = view.size();
+}
+
+Serpent::Interner::Value::~Value() {
+    if (data)
+        delete[] data;
+    data = 0;
+}
+
+std::string_view Serpent::Interner::Value::View() const {
+    return {data, size};
+}
+
+size_t Serpent::Interner::Acquire(std::string_view view) {
+    std::unique_lock<std::shared_mutex> lock {mutex};
+
+    if (indices.contains(view))
+        return AddRef(indices[view]);
+
+    size_t idx = strings.Push(view);
+    auto &value = *strings.Get(idx);
+    indices[value.View()] = idx;
+
+    return idx;
+}
+
+size_t Serpent::Interner::AddRef(size_t index) {
+    std::unique_lock<std::shared_mutex> lock {mutex};
+
+    auto maybeValue = strings.Get(index);
+
+    if (maybeValue)
+        maybeValue->refCount += 1;
+
+    return index;
+}
+
+void Serpent::Interner::RemoveRef(size_t index) {
+    std::unique_lock<std::shared_mutex> lock {mutex};
+
+    auto maybeValue = strings.Get(index);
+
+    if (!maybeValue)
+        return;
+
+    maybeValue->refCount -= 1;
+
+    if (maybeValue->refCount == 0) {
+        indices.erase(maybeValue->View());
+        strings.Remove(index);
+    }
+}
+
+std::string_view Serpent::Interner::Get(size_t index) {
+    std::shared_lock<std::shared_mutex> lock {mutex};
+
+    auto maybeValue = strings.Get(index);
+
+    if (!maybeValue)
+        return {};
+    
+    return maybeValue->View();
+}
+
+Serpent::InternedString::InternedString(std::string_view view) :
+    index(Interner::Instance().Acquire(view))
+{}
+
+Serpent::InternedString::InternedString(Serpent::InternedString const &copy) :
+    index(Interner::Instance().AddRef(copy.index))
+{}
+
+Serpent::InternedString &Serpent::InternedString::operator = (Serpent::InternedString const &copy) {
+    if (index != copy.index) {
+        auto &interner = Interner::Instance();
+        interner.RemoveRef(this->index);
+
+        this->index = interner.AddRef(copy.index);
+    }
+
+    return *this;
+}
+
+Serpent::InternedString::operator std::string_view () const {
+    return Interner::Instance().Get(index);
+}
+
+std::string_view Serpent::InternedString::Value() const {
+    return Interner::Instance().Get(index);
+}
+
+size_t Serpent::InternedString::Index() const {
+    return index;
+}
+
+bool Serpent::InternedString::operator == (InternedString const &rhs) const {
+    return index == rhs.index;
+}
+
+bool Serpent::InternedString::operator != (InternedString const &rhs) const {
+    return index != rhs.index;
+}
+
+bool Serpent::InternedString::operator == (std::string_view const &rhs) const {
+    return Value() == rhs;
+}
+
+bool Serpent::InternedString::operator != (std::string_view const &rhs) const {
+    return Value() != rhs;
+}
+
+bool operator == (std::string_view const &lhs, Serpent::InternedString const &rhs) {
+    return rhs == lhs;
+}
+
+bool operator != (std::string_view const &lhs, Serpent::InternedString const &rhs) {
+    return rhs != lhs;
+}
+
+size_t std::hash<Serpent::InternedString>::operator () (Serpent::InternedString const &s) const noexcept {
+    return std::hash<size_t>()(s.Index());
+}
