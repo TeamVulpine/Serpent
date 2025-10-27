@@ -44,7 +44,7 @@ namespace Serpent {
         std::string_view Get(size_t index);
     };
 
-    struct InternedString final {
+    struct SERPENT_API InternedString final {
         private:
         size_t index;
 
@@ -72,11 +72,11 @@ namespace Serpent {
         bool operator == (std::string_view const &rhs) const;
         bool operator != (std::string_view const &rhs) const;
     };
-    bool operator == (std::string_view const &lhs, InternedString const &rhs);
-    bool operator != (std::string_view const &lhs, InternedString const &rhs);
+    SERPENT_API bool operator == (std::string_view const &lhs, InternedString const &rhs);
+    SERPENT_API bool operator != (std::string_view const &lhs, InternedString const &rhs);
 }
 
 template <>
-struct std::hash<Serpent::InternedString> final {
+struct SERPENT_API std::hash<Serpent::InternedString> final {
     size_t operator () (Serpent::InternedString const &s) const noexcept;
 };

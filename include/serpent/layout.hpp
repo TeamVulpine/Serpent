@@ -54,8 +54,8 @@ namespace Serpent {
         ArrayLayout
     >;
 
-    size_t GetSize(ValueLayout const &layout);
-    size_t GetAlign(ValueLayout const &layout);
+    SERPENT_API size_t GetSize(ValueLayout const &layout);
+    SERPENT_API size_t GetAlign(ValueLayout const &layout);
 
     struct SERPENT_API ObjectLayout final {
         private:
