@@ -49,7 +49,10 @@ namespace Serpent {
         size_t index;
 
         public:
+        static InternedString const Empty;
+
         InternedString(std::string_view view);
+        InternedString();
 
         InternedString(InternedString const &copy);
         InternedString(InternedString &&move) = default;

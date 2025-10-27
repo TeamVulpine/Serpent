@@ -13,9 +13,14 @@ Serpent::Interner &Serpent::Interner::Instance() {
 }
 
 Serpent::Interner::Value::Value(std::string_view view) {
-    auto tmpData = new char[view.length() + 1];
+    if (view.empty()) {
+        data = nullptr;
+        size = 0;
+        return;
+    }
+
+    auto tmpData = new char[view.length()];
     std::copy(view.begin(), view.end(), tmpData);
-    tmpData[view.length()] = 0;
 
     data = tmpData;
     size = view.size();
@@ -82,8 +87,14 @@ std::string_view Serpent::Interner::Get(size_t index) {
     return maybeValue->View();
 }
 
+Serpent::InternedString const Serpent::InternedString::Empty {};
+
 Serpent::InternedString::InternedString(std::string_view view) :
     index(Interner::Instance().Acquire(view))
+{}
+
+Serpent::InternedString::InternedString() :
+    index(Interner::Instance().Acquire(""))
 {}
 
 Serpent::InternedString::InternedString(Serpent::InternedString const &copy) :

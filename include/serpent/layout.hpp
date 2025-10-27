@@ -30,18 +30,24 @@ namespace Serpent {
         Float64,
     };
 
-    struct SERPENT_API StringLayout {};
+    enum struct PrimitiveLayout : uint8_t {
+        /// Represents an interned string value
+        String,
+        /// Represents a unit type, can only have one value
+        Unit,
+    };
 
     struct ObjectLayout;
     struct VariantLayout;
     struct ArrayLayout;
-    struct FieldLayout;
     struct EnumLayout;
+
+    struct NamedLayout;
 
     using ValueLayout = std::variant<
         IntegralLayout,
         FloatingLayout,
-        StringLayout,
+        PrimitiveLayout,
         EnumLayout,
         ObjectLayout,
         VariantLayout,
@@ -69,22 +75,28 @@ namespace Serpent {
         
         public:
         /// Returns nullopt if there are duplicated field names
-        static std::optional<ObjectLayout> Of(std::initializer_list<FieldLayout> fields); 
+        static std::optional<ObjectLayout> Of(std::initializer_list<NamedLayout> fields); 
 
         size_t Size() const;
         size_t Align() const;
+
+        bool operator == (ObjectLayout const &rhs) const = default;
+
+        void DefaultInitialize(void *data) const;
     };
 
     struct SERPENT_API VariantLayout final {
         private:
-        std::vector<FieldLayout> variants;
+        std::vector<NamedLayout> variants;
         std::unordered_map<InternedString, size_t> indices;
+        std::optional<InternedString> variantFieldName;
         size_t size;
         size_t align;
 
         VariantLayout(
-            std::vector<FieldLayout> variants,
+            std::vector<NamedLayout> variants,
             std::unordered_map<InternedString, size_t> indices,
+            std::optional<InternedString> variantFieldName,
             size_t size,
             size_t align
         );
@@ -93,10 +105,14 @@ namespace Serpent {
         /// Returns nullopt if there are duplicated field names
         /// if variantFieldName is nullopt, it uses the name of the variant as a key
         /// `{"SomeVariant": 5}` vs `{"type": "SomeVariant", "value": 5}`
-        static std::optional<VariantLayout> Of(std::initializer_list<FieldLayout> fields, std::optional<std::string_view> variantFieldName = std::nullopt);
+        static std::optional<VariantLayout> Of(std::initializer_list<NamedLayout> fields, std::optional<std::string_view> variantFieldName = std::nullopt);
 
         size_t Size() const;
         size_t Align() const;
+
+        bool operator == (VariantLayout const &rhs) const = default;
+
+        void DefaultInitialize(void *data) const;
     };
 
     struct SERPENT_API ArrayLayout final {
@@ -109,6 +125,8 @@ namespace Serpent {
         private:
         std::unique_ptr<ValueLayout> layout;
 
+        ArrayLayout(ValueLayout &&layout);
+        
         public:
         ArrayLayout(ArrayLayout &&move) = default;
         /// Deep clones the object
@@ -117,6 +135,9 @@ namespace Serpent {
         static ArrayLayout Of(ValueLayout &&layout);
 
         ValueLayout const &Layout() const;
+
+        /// Deep equality
+        bool operator == (ArrayLayout const &rhs) const;
     };
 
     struct SERPENT_API EnumLayout final {
@@ -134,22 +155,28 @@ namespace Serpent {
         static std::optional<EnumLayout> Of(std::initializer_list<std::string_view> names, IntegralLayout backing = IntegralLayout::UInt32);
 
         IntegralLayout Backing() const;
+
+        bool operator == (EnumLayout const &rhs) const = default;
     };
 
-    struct SERPENT_API FieldLayout final {
+    struct SERPENT_API NamedLayout final {
         private:
         InternedString name;
         ValueLayout layout;
 
         public:
-        FieldLayout(std::string_view name, ValueLayout &&layout);
+        NamedLayout(std::string_view name, ValueLayout &&layout);
 
         InternedString Name() const;
         ValueLayout const &Layout() const;
+
+        bool operator == (NamedLayout const &rhs) const = default;
     };
 
     struct SERPENT_API ObjectLayout::Field final {
-        FieldLayout layout;
+        NamedLayout layout;
         size_t offset;
+
+        bool operator == (Field const &rhs) const = default;
     };
 }

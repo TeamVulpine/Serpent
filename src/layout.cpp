@@ -2,6 +2,7 @@
 #include <cassert>
 #include <concepts>
 #include <cstddef>
+#include <memory>
 #include <optional>
 #include <variant>
 
@@ -42,12 +43,17 @@ size_t Serpent::GetSize(ValueLayout const &layout) {
                     case FloatingLayout::Float64:
                         return 8;
                 }
-            } else if constexpr (std::same_as<T, StringLayout>) {
-                return sizeof(InternedString);
             } else if constexpr (std::same_as<T, ObjectLayout> || std::same_as<T, VariantLayout>) {
                 return value.Size();
             } else if constexpr (std::same_as<T, ArrayLayout>) {
                 return sizeof(ArrayLayout::Backing);
+            } else if constexpr (std::same_as<T, PrimitiveLayout>) {
+                switch (value) {
+                    case PrimitiveLayout::String:
+                        return sizeof(InternedString);
+                    case PrimitiveLayout::Unit:
+                        return 0;
+                }
             }
         },
         layout
@@ -88,24 +94,41 @@ size_t Serpent::GetAlign(ValueLayout const &layout) {
                     case FloatingLayout::Float64:
                         return 8;
                 }
-            } else if constexpr (std::same_as<T, StringLayout>) {
-                return alignof(InternedString);
             } else if constexpr (std::same_as<T, ObjectLayout> || std::same_as<T, VariantLayout>) {
                 return value.Align();
             } else if constexpr (std::same_as<T, ArrayLayout>) {
                 return alignof(ArrayLayout::Backing);
+            } else if constexpr (std::same_as<T, PrimitiveLayout>) {
+                switch (value) {
+                    case PrimitiveLayout::String:
+                        return alignof(InternedString);
+                    case PrimitiveLayout::Unit:
+                        return 1;
+                }
             }
         },
         layout
     );
 }
 
-std::optional<Serpent::ObjectLayout> Serpent::ObjectLayout::Of(std::initializer_list<FieldLayout> init) {
+Serpent::ObjectLayout::ObjectLayout(
+    std::vector<Field> fields,
+    std::unordered_map<InternedString, size_t> indices,
+    size_t size,
+    size_t align
+) :
+    fields(fields),
+    indices(indices),
+    size(size),
+    align(align)
+{}
+
+std::optional<Serpent::ObjectLayout> Serpent::ObjectLayout::Of(std::initializer_list<NamedLayout> init) {
     size_t offset = 0;
     std::vector<ObjectLayout::Field> fields {};
     std::unordered_map<InternedString, size_t> indices;
     size_t size = 0;
-    size_t align = 1;
+    size_t align = 0;
 
     for (auto const &field : init) {
         auto const &layout = field.Layout();
@@ -134,4 +157,87 @@ std::optional<Serpent::ObjectLayout> Serpent::ObjectLayout::Of(std::initializer_
     size = (offset + align - 1) & ~(align - 1);
 
     return ObjectLayout(fields, indices, size, align);
+}
+
+size_t Serpent::ObjectLayout::Size() const {
+    return size;
+};
+
+size_t Serpent::ObjectLayout::Align() const {
+    return align;
+};
+
+Serpent::VariantLayout::VariantLayout(
+    std::vector<NamedLayout> variants,
+    std::unordered_map<InternedString, size_t> indices,
+    std::optional<InternedString> variantFieldName,
+    size_t size,
+    size_t align
+) :
+    variants(variants),
+    indices(indices),
+    variantFieldName(variantFieldName),
+    size(size),
+    align(align)
+{}
+
+std::optional<Serpent::VariantLayout> Serpent::VariantLayout::Of(std::initializer_list<NamedLayout> init, std::optional<std::string_view> variantFieldName) {
+    std::vector<NamedLayout> variants {init};
+    std::unordered_map<InternedString, size_t> indices;
+    size_t size = 0;
+    size_t align = 0;
+
+    for (auto const &variant : variants) {
+        auto const &layout = variant.Layout();
+        size_t const variantAlign = GetAlign(layout);
+        size_t const variantSize  = GetSize(layout);
+
+        InternedString name = variant.Name();
+
+        if (indices.contains(name))
+            return std::nullopt;
+
+        size = std::max(size, variantSize);
+
+        align = std::max(align, variantAlign);
+    }
+
+    size = (size + align - 1) & ~(align - 1);
+
+    return VariantLayout(variants, indices, variantFieldName, size, align);
+}
+
+size_t Serpent::VariantLayout::Size() const {
+    return size;
+};
+
+size_t Serpent::VariantLayout::Align() const {
+    return align;
+};
+
+Serpent::ArrayLayout::ArrayLayout(Serpent::ValueLayout &&layout) :
+    layout(std::make_unique<ValueLayout>(layout))
+{}
+
+Serpent::ArrayLayout::ArrayLayout(Serpent::ArrayLayout const &copy) :
+    layout(std::make_unique<ValueLayout>(*copy.layout))
+{}
+
+Serpent::ValueLayout const &Serpent::ArrayLayout::Layout() const {
+    return *layout;
+}
+
+bool Serpent::ArrayLayout::operator == (ArrayLayout const &rhs) const {
+    if (this == &rhs)
+        return true;
+
+    return Layout() == rhs.Layout();
+}
+
+Serpent::InternedString Serpent::NamedLayout::Name() const {
+    return name;
+}
+
+Serpent::ValueLayout const &Serpent::NamedLayout::Layout() const {
+    return layout;
 }
