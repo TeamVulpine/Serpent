@@ -18,7 +18,7 @@ namespace Serpent {
             size_t refCount = 1;
 
             Value(std::string_view view);
-            ~Value();
+            void Cleanup();
 
             std::string_view View() const;
         };
@@ -45,24 +45,26 @@ namespace Serpent {
     };
 
     struct SERPENT_API InternedString final {
+        static InternedString const Empty;
+
         private:
         size_t index;
 
         public:
-        static InternedString const Empty;
-
         InternedString(std::string_view view);
         InternedString();
 
         InternedString(InternedString const &copy);
-        InternedString(InternedString &&move) = default;
+        InternedString(InternedString &&move);
 
         ~InternedString();
 
         InternedString &operator = (InternedString const &copy);
-        InternedString &operator = (InternedString &&move) = default;
+        InternedString &operator = (InternedString &&move);
 
+        /// String view only lives as long as there's an interned string referencing it
         operator std::string_view () const;
+        /// String view only lives as long as there's an interned string referencing it
         std::string_view Value() const;
 
         size_t Index() const;

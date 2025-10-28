@@ -54,6 +54,8 @@ namespace Serpent {
         ArrayLayout
     >;
 
+    SERPENT_API void DefaultInitialize(ValueLayout const &layout, void *value);
+
     SERPENT_API size_t GetSize(ValueLayout const &layout);
     SERPENT_API size_t GetAlign(ValueLayout const &layout);
 
@@ -90,6 +92,7 @@ namespace Serpent {
         std::vector<NamedLayout> variants;
         std::unordered_map<InternedString, size_t> indices;
         std::optional<InternedString> variantFieldName;
+        size_t tagSize;
         size_t size;
         size_t align;
 
@@ -97,6 +100,7 @@ namespace Serpent {
             std::vector<NamedLayout> variants,
             std::unordered_map<InternedString, size_t> indices,
             std::optional<InternedString> variantFieldName,
+            size_t tagSize,
             size_t size,
             size_t align
         );
@@ -138,6 +142,8 @@ namespace Serpent {
 
         /// Deep equality
         bool operator == (ArrayLayout const &rhs) const;
+
+        void DefaultInitialize(void *data) const;
     };
 
     struct SERPENT_API EnumLayout final {
@@ -167,7 +173,7 @@ namespace Serpent {
         public:
         NamedLayout(std::string_view name, ValueLayout &&layout);
 
-        InternedString Name() const;
+        std::string_view Name() const;
         ValueLayout const &Layout() const;
 
         bool operator == (NamedLayout const &rhs) const = default;

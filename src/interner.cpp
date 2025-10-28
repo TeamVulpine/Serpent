@@ -6,6 +6,8 @@
 
 #include "serpent/interner.hpp"
 
+Serpent::Interner::Interner() {}
+
 Serpent::Interner &Serpent::Interner::Instance() {
     static Interner value {};
 
@@ -26,7 +28,7 @@ Serpent::Interner::Value::Value(std::string_view view) {
     size = view.size();
 }
 
-Serpent::Interner::Value::~Value() {
+void Serpent::Interner::Value::Cleanup() {
     if (data)
         delete[] data;
     data = 0;
@@ -37,22 +39,30 @@ std::string_view Serpent::Interner::Value::View() const {
 }
 
 size_t Serpent::Interner::Acquire(std::string_view view) {
+    if (view.empty())
+        return 0;
+
     std::unique_lock<std::shared_mutex> lock {mutex};
 
-    if (indices.contains(view))
+    if (indices.contains(view)) {
+        lock.unlock();
         return AddRef(indices[view]);
+    }
 
     size_t idx = strings.Push(view);
     auto &value = *strings.Get(idx);
     indices[value.View()] = idx;
 
-    return idx;
+    return idx + 1;
 }
 
 size_t Serpent::Interner::AddRef(size_t index) {
+    if (index == 0)
+        return 0;
+
     std::unique_lock<std::shared_mutex> lock {mutex};
 
-    auto maybeValue = strings.Get(index);
+    auto maybeValue = strings.Get(index - 1);
 
     if (maybeValue)
         maybeValue->refCount += 1;
@@ -61,9 +71,12 @@ size_t Serpent::Interner::AddRef(size_t index) {
 }
 
 void Serpent::Interner::RemoveRef(size_t index) {
+    if (index == 0)
+        return;
+
     std::unique_lock<std::shared_mutex> lock {mutex};
 
-    auto maybeValue = strings.Get(index);
+    auto maybeValue = strings.Get(index - 1);
 
     if (!maybeValue)
         return;
@@ -72,14 +85,18 @@ void Serpent::Interner::RemoveRef(size_t index) {
 
     if (maybeValue->refCount == 0) {
         indices.erase(maybeValue->View());
-        strings.Remove(index);
+        maybeValue->Cleanup();
+        strings.Remove(index - 1);
     }
 }
 
 std::string_view Serpent::Interner::Get(size_t index) {
+    if (index == 0)
+        return "";
+
     std::shared_lock<std::shared_mutex> lock {mutex};
 
-    auto maybeValue = strings.Get(index);
+    auto maybeValue = strings.Get(index - 1);
 
     if (!maybeValue)
         return {};
@@ -101,12 +118,35 @@ Serpent::InternedString::InternedString(Serpent::InternedString const &copy) :
     index(Interner::Instance().AddRef(copy.index))
 {}
 
+Serpent::InternedString::InternedString(Serpent::InternedString &&move) :
+    index(move.index)
+{
+    move.index = 0;
+}
+
+Serpent::InternedString::~InternedString() {
+    Interner::Instance().RemoveRef(index);
+    index = 0;
+}
+
 Serpent::InternedString &Serpent::InternedString::operator = (Serpent::InternedString const &copy) {
     if (index != copy.index) {
         auto &interner = Interner::Instance();
         interner.RemoveRef(this->index);
 
         this->index = interner.AddRef(copy.index);
+    }
+
+    return *this;
+}
+
+Serpent::InternedString &Serpent::InternedString::operator = (Serpent::InternedString &&move) {
+    if (index != move.index) {
+        auto &interner = Interner::Instance();
+        interner.RemoveRef(this->index);
+
+        this->index = move.index;
+        move.index = 0;
     }
 
     return *this;
