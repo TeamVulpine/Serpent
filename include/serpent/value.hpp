@@ -9,6 +9,7 @@
 
 #include "serpent/api.hpp"
 #include "serpent/layout.hpp"
+#include "serpent/stream.hpp"
 
 namespace Serpent {
     struct SERPENT_API Value final {
@@ -141,6 +142,9 @@ namespace Serpent {
         std::optional<uint64_t> GetUint64() const;
         std::optional<float> GetFloat32() const;
         std::optional<double> GetFloat64() const;
+        bool GetFromStream(StructuredOutputStream &stream) const;
+
+        std::optional<ValueHandle> Copy() const;
     };
 
     struct SERPENT_API ValueViewMut final {
@@ -183,6 +187,9 @@ namespace Serpent {
         std::optional<uint64_t> GetUint64() const;
         std::optional<float> GetFloat32() const;
         std::optional<double> GetFloat64() const;
+        bool GetFromStream(StructuredOutputStream &stream) const;
+
+        std::optional<ValueHandle> Copy() const;
 
         bool SetVariant(std::string_view variant);
         bool SetEnum(std::string_view value);
@@ -201,6 +208,7 @@ namespace Serpent {
 
         bool SetFromHandle(ValueHandle handle);
         bool SetFromReference(ValueReference reference);
+        bool SetFromStream(StructuredInputStream stream);
 
         /// Pushes a default initialized value.
         /// Updates the generation of this, since we know how the data changed
@@ -239,6 +247,8 @@ namespace Serpent {
         bool PushFromHandle(ValueHandle handle);
         /// Updates the generation of this, since we know how the data changed
         bool PushFromReference(ValueReference reference);
+        /// Updates the generation of this, since we know how the data changed
+        bool PushFromStream(StructuredInputStream &stream);
 
         /// SAFETY:
         ///   This function performs a reinterpret_cast on the data,
