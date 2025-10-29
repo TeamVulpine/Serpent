@@ -363,7 +363,8 @@ void Serpent::ArrayLayout::DefaultInitialize(void *data) const {
 
 Serpent::EnumLayout::EnumLayout(
     IntegralLayout backing,
-    std::vector<InternedString> names
+    std::vector<InternedString> names,
+    std::unordered_map<InternedString, size_t> indices
 ) :
     backing(backing),
     names(names)
@@ -371,17 +372,19 @@ Serpent::EnumLayout::EnumLayout(
 
 std::optional<Serpent::EnumLayout> Serpent::EnumLayout::Of(std::initializer_list<std::string_view> names, IntegralLayout backing) {
     std::vector<InternedString> values;
-    std::unordered_set<InternedString> set;
+    std::unordered_map<InternedString, size_t> indices;
 
-    for (std::string_view name : names) {
-        if (set.contains(name))
+    for (size_t i = 0; i < values.size(); i++) {
+        auto name = values[i];
+
+        if (indices.contains(name))
             return std::nullopt;
         
         values.emplace_back(name);
-        set.emplace(name);
+        indices.emplace(name, i);
     }
 
-    return EnumLayout(backing, values);
+    return EnumLayout(backing, values, indices);
 }
 
 Serpent::IntegralLayout Serpent::EnumLayout::Backing() const {

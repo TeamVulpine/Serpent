@@ -6,6 +6,7 @@
 #include <memory>
 #include <optional>
 #include <string_view>
+#include <unordered_map>
 #include <variant>
 #include <vector>
 
@@ -150,10 +151,12 @@ namespace Serpent {
         private:
         IntegralLayout backing;
         std::vector<InternedString> names;
+        std::unordered_map<InternedString, size_t> indices;
 
         EnumLayout(
             IntegralLayout backing,
-            std::vector<InternedString> names
+            std::vector<InternedString> names,
+            std::unordered_map<InternedString, size_t> indices
         );
 
         public:
