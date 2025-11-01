@@ -1,26 +1,38 @@
-#include <new>
+#include <cassert>
 #include <print>
 #include "serpent/layout.hpp"
 
-const Serpent::ValueLayout TestLayout = Serpent::ObjectLayout::Of({
-    {"integral", Serpent::IntegralLayout::Int8},
-    {"floating", Serpent::FloatingLayout::Float64},
-    {"string", Serpent::PrimitiveLayout::String},
-    {"unit", Serpent::PrimitiveLayout::Unit},
-    {"array", Serpent::ArrayLayout::Of(Serpent::IntegralLayout::UInt64)},
-    {"i1", Serpent::IntegralLayout::Int8},
-    {"i2", Serpent::IntegralLayout::Int8},
-    {"i3", Serpent::IntegralLayout::Int16},
-    {"i4", Serpent::IntegralLayout::Int32},
-}).value();
+const auto Vec3fLayout = Serpent::ObjectLayout::Of({
+    {"x", Serpent::FloatingLayout::Float64},
+    {"y", Serpent::FloatingLayout::Float64},
+    {"z", Serpent::FloatingLayout::Float64},
+});
+
+const auto U64Array = Serpent::ArrayLayout::Of(Serpent::IntegralLayout::UInt64);
+
+const auto TestLayout = Serpent::ObjectLayout::Of({
+    {"integral", Serpent::IntegralLayout::Int8}, // offset 0 size 1
+    {"floating", Serpent::FloatingLayout::Float64}, // offset 8 size 8
+    {"string", Serpent::PrimitiveLayout::String}, // offset 16 size 8
+    {"unit", Serpent::PrimitiveLayout::Unit}, // offset 24 size 0
+    {"array", U64Array}, // offsett 24 size 8
+    {"i1", Serpent::IntegralLayout::Int8}, // offset 32 size 1
+    {"i2", Serpent::IntegralLayout::Int8}, // offset 33 size 1
+    {"i3", Serpent::IntegralLayout::Int16}, // offset 34 size 2
+    {"i4", Serpent::IntegralLayout::Int32},  // offset 36 size 4
+    {"position", Vec3fLayout} // offset 40 size 8
+}); // Size 48 align 8
 
 int main(int argc, char **argv) {
-    void *data = ::operator new(Serpent::GetSize(TestLayout), std::align_val_t(Serpent::GetAlign(TestLayout)));
-    std::println("{}", data);
+    size_t size = TestLayout->Size();
+    size_t align = TestLayout->Align();
 
-    Serpent::DefaultInitialize(TestLayout, data);
-
-    ::operator delete(data);
+    std::println("{}", size);
+    assert(size == 48);
+    std::println("{}", align);
+    assert(align == 8);
+    
+    auto value = TestLayout->New(size);
 
     return 0;
 }

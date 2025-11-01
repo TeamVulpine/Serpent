@@ -14,6 +14,8 @@
 #include "interner.hpp"
 
 namespace Serpent {
+    struct GcValue;
+
     enum struct IntegralLayout : uint8_t {
         Bool,
         UInt8,
@@ -38,9 +40,7 @@ namespace Serpent {
         Unit,
     };
 
-    struct ObjectLayout;
-    struct VariantLayout;
-    struct ArrayLayout;
+    struct GcLayout;
     struct EnumLayout;
 
     struct NamedLayout;
@@ -49,10 +49,8 @@ namespace Serpent {
         IntegralLayout,
         FloatingLayout,
         PrimitiveLayout,
-        EnumLayout,
-        ObjectLayout,
-        VariantLayout,
-        ArrayLayout
+        std::shared_ptr<EnumLayout const>,
+        std::shared_ptr<GcLayout const>
     >;
 
     SERPENT_API void DefaultInitialize(ValueLayout const &layout, void *value);
@@ -60,7 +58,22 @@ namespace Serpent {
     SERPENT_API size_t GetSize(ValueLayout const &layout);
     SERPENT_API size_t GetAlign(ValueLayout const &layout);
 
-    struct SERPENT_API ObjectLayout final {
+    class GcLayout : public std::enable_shared_from_this<GcLayout> {
+        public:
+        virtual size_t Align() const = 0;
+
+        virtual GcValue *New(size_t size) const = 0;
+    };
+
+    class SizedGcLayout : public GcLayout {
+        public:
+        virtual size_t Size() const = 0;
+
+        GcValue *New(size_t size) const override final;
+        virtual void Initialize(void *root) const = 0;
+    };
+
+    struct SERPENT_API ObjectLayout final : public SizedGcLayout {
         private:
         struct Field;
 
@@ -77,18 +90,39 @@ namespace Serpent {
         );
         
         public:
-        /// Returns nullopt if there are duplicated field names
-        static std::optional<ObjectLayout> Of(std::initializer_list<NamedLayout> fields); 
+        /// Returns nullptr if there are duplicated field names
+        static std::shared_ptr<ObjectLayout> Of(std::initializer_list<NamedLayout> fields); 
 
-        size_t Size() const;
-        size_t Align() const;
+        size_t Size() const override;
+        size_t Align() const override;
 
-        bool operator == (ObjectLayout const &rhs) const = default;
-
-        void DefaultInitialize(void *data) const;
+        void Initialize(void *root) const override;
     };
 
-    struct SERPENT_API VariantLayout final {
+    struct SERPENT_API TupleLayout final : public SizedGcLayout {
+        private:
+        struct Field;
+
+        std::vector<Field> fields;
+        size_t size;
+        size_t align;
+
+        TupleLayout(
+            std::vector<Field> fields,
+            size_t size,
+            size_t align
+        );
+        
+        public:
+        static std::shared_ptr<TupleLayout> Of(std::initializer_list<ValueLayout> fields); 
+
+        size_t Size() const override;
+        size_t Align() const override;
+
+        void Initialize(void *root) const override;
+    };
+
+    struct SERPENT_API VariantLayout final : public SizedGcLayout {
         private:
         std::vector<NamedLayout> variants;
         std::unordered_map<InternedString, size_t> indices;
@@ -107,44 +141,34 @@ namespace Serpent {
         );
         
         public:
-        /// Returns nullopt if there are duplicated field names
+        /// Returns nullptr if there are duplicated field names
         /// if variantFieldName is nullopt, it uses the name of the variant as a key
         /// `{"SomeVariant": 5}` vs `{"type": "SomeVariant", "value": 5}`
-        static std::optional<VariantLayout> Of(std::initializer_list<NamedLayout> fields, std::optional<std::string_view> variantFieldName = std::nullopt);
+        static std::shared_ptr<VariantLayout> Of(std::initializer_list<NamedLayout> fields, std::optional<std::string_view> variantFieldName = std::nullopt);
 
-        size_t Size() const;
-        size_t Align() const;
+        size_t Size() const override;
+        size_t Align() const override;
 
-        bool operator == (VariantLayout const &rhs) const = default;
-
-        void DefaultInitialize(void *data) const;
+        void Initialize(void *root) const override;
     };
 
-    struct SERPENT_API ArrayLayout final {
-        struct Backing {
-            void *data;
-            size_t size;
-            size_t capacity;
-        };
-
+    struct SERPENT_API ArrayLayout final : public GcLayout {
         private:
-        std::unique_ptr<ValueLayout> layout;
+        ValueLayout layout;
 
         ArrayLayout(ValueLayout &&layout);
         
         public:
         ArrayLayout(ArrayLayout &&move) = default;
-        /// Deep clones the object
         ArrayLayout(ArrayLayout const &copy);
 
-        static ArrayLayout Of(ValueLayout &&layout);
+        static std::shared_ptr<ArrayLayout> Of(ValueLayout &&layout);
 
         ValueLayout const &Layout() const;
 
-        /// Deep equality
-        bool operator == (ArrayLayout const &rhs) const;
+        size_t Align() const override;
 
-        void DefaultInitialize(void *data) const;
+        GcValue *New(size_t size) const override;
     };
 
     struct SERPENT_API EnumLayout final {
@@ -160,12 +184,10 @@ namespace Serpent {
         );
 
         public:
-        /// Returns nullopt if there are duplicated names
-        static std::optional<EnumLayout> Of(std::initializer_list<std::string_view> names, IntegralLayout backing = IntegralLayout::UInt32);
+        /// Returns nullptr if there are duplicated field names
+        static std::shared_ptr<EnumLayout> Of(std::initializer_list<std::string_view> names, IntegralLayout backing = IntegralLayout::UInt32);
 
         IntegralLayout Backing() const;
-
-        bool operator == (EnumLayout const &rhs) const = default;
     };
 
     struct SERPENT_API NamedLayout final {
@@ -174,7 +196,7 @@ namespace Serpent {
         ValueLayout layout;
 
         public:
-        NamedLayout(std::string_view name, ValueLayout &&layout);
+        NamedLayout(std::string_view name, ValueLayout layout);
 
         std::string_view Name() const;
         ValueLayout const &Layout() const;
@@ -184,6 +206,13 @@ namespace Serpent {
 
     struct SERPENT_API ObjectLayout::Field final {
         NamedLayout layout;
+        size_t offset;
+
+        bool operator == (Field const &rhs) const = default;
+    };
+
+    struct SERPENT_API TupleLayout::Field final {
+        ValueLayout layout;
         size_t offset;
 
         bool operator == (Field const &rhs) const = default;

@@ -4,29 +4,29 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
 #include <optional>
 #include <print>
 #include <string_view>
-#include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
 
 #include "serpent/layout.hpp"
 #include "serpent/interner.hpp"
+#include "serpent/value.hpp"
 
 void Serpent::DefaultInitialize(Serpent::ValueLayout const &layout, void *ptr) {
     std::visit(
         [ptr](auto &value) {
             using T = std::decay_t<decltype(value)>;
-            std::println("{}: {}", ptr, typeid(T).name());
-            if constexpr (std::same_as<T, IntegralLayout> || std::same_as<T, EnumLayout>) {
+            if constexpr (std::same_as<T, IntegralLayout> || std::same_as<T, std::shared_ptr<EnumLayout const>>) {
                 IntegralLayout integral;
                 if constexpr (std::same_as<T, IntegralLayout>) {
                     integral = value;
                 } else {
-                    integral = value.Backing();
+                    integral = value->Backing();
                 }
 
                 switch (integral) {
@@ -57,8 +57,8 @@ void Serpent::DefaultInitialize(Serpent::ValueLayout const &layout, void *ptr) {
                         *reinterpret_cast<double *>(ptr) = 0;
                         break;
                 }
-            } else if constexpr (std::same_as<T, ObjectLayout> || std::same_as<T, VariantLayout> || std::same_as<T, ArrayLayout>) {
-                value.DefaultInitialize(ptr);
+            } else if constexpr (std::same_as<T, std::shared_ptr<GcLayout const>>) {
+                *reinterpret_cast<size_t *>(ptr) = 0;
             } else if constexpr (std::same_as<T, PrimitiveLayout>) {
                 switch (value) {
                     case PrimitiveLayout::String:
@@ -67,6 +67,10 @@ void Serpent::DefaultInitialize(Serpent::ValueLayout const &layout, void *ptr) {
                     case PrimitiveLayout::Unit:
                         break;
                 }
+            } else {
+                std::println("{}", typeid(T).name());
+
+                std::unreachable();
             }
         },
         layout
@@ -77,12 +81,12 @@ size_t Serpent::GetSize(ValueLayout const &layout) {
     return std::visit(
         [](auto const &value) -> size_t {
             using T = std::decay_t<decltype(value)>;
-            if constexpr (std::same_as<T, IntegralLayout> || std::same_as<T, EnumLayout>) {
+            if constexpr (std::same_as<T, IntegralLayout> || std::same_as<T, std::shared_ptr<EnumLayout const>>) {
                 IntegralLayout integral;
                 if constexpr (std::same_as<T, IntegralLayout>) {
                     integral = value;
                 } else {
-                    integral = value.Backing();
+                    integral = value->Backing();
                 }
 
                 switch (integral) {
@@ -107,10 +111,8 @@ size_t Serpent::GetSize(ValueLayout const &layout) {
                     case FloatingLayout::Float64:
                         return 8;
                 }
-            } else if constexpr (std::same_as<T, ObjectLayout> || std::same_as<T, VariantLayout>) {
-                return value.Size();
-            } else if constexpr (std::same_as<T, ArrayLayout>) {
-                return sizeof(ArrayLayout::Backing);
+            } else if constexpr (std::same_as<T, std::shared_ptr<GcLayout const>>) {
+                return 8;
             } else if constexpr (std::same_as<T, PrimitiveLayout>) {
                 switch (value) {
                     case PrimitiveLayout::String:
@@ -119,6 +121,8 @@ size_t Serpent::GetSize(ValueLayout const &layout) {
                         return 0;
                 }
             }
+
+            std::println("{}", typeid(T).name());
 
             std::unreachable();
         },
@@ -130,12 +134,12 @@ size_t Serpent::GetAlign(ValueLayout const &layout) {
     return std::visit(
         [](auto &value) -> size_t {
             using T = std::decay_t<decltype(value)>;
-            if constexpr (std::same_as<T, IntegralLayout> || std::same_as<T, EnumLayout>) {
+            if constexpr (std::same_as<T, IntegralLayout> || std::same_as<T, std::shared_ptr<EnumLayout const>>) {
                 IntegralLayout integral;
                 if constexpr (std::same_as<T, IntegralLayout>) {
                     integral = value;
                 } else {
-                    integral = value.Backing();
+                    integral = value->Backing();
                 }
 
                 switch (integral) {
@@ -160,10 +164,8 @@ size_t Serpent::GetAlign(ValueLayout const &layout) {
                     case FloatingLayout::Float64:
                         return 8;
                 }
-            } else if constexpr (std::same_as<T, ObjectLayout> || std::same_as<T, VariantLayout>) {
-                return value.Align();
-            } else if constexpr (std::same_as<T, ArrayLayout>) {
-                return alignof(ArrayLayout::Backing);
+            } else if constexpr (std::same_as<T, std::shared_ptr<GcLayout const>>) {
+                return 8;
             } else if constexpr (std::same_as<T, PrimitiveLayout>) {
                 switch (value) {
                     case PrimitiveLayout::String:
@@ -173,10 +175,24 @@ size_t Serpent::GetAlign(ValueLayout const &layout) {
                 }
             }
 
+            std::println("{}", typeid(T).name());
+
             std::unreachable();
         },
         layout
     );
+}
+
+Serpent::GcValue *Serpent::SizedGcLayout::New(size_t size) const {
+    assert(size == Size());
+
+    GcValue *value = GcValue::New(size, shared_from_this());
+
+    void *root = value->Data();
+    
+    Initialize(root);
+    
+    return value;
 }
 
 Serpent::ObjectLayout::ObjectLayout(
@@ -191,7 +207,7 @@ Serpent::ObjectLayout::ObjectLayout(
     align(align)
 {}
 
-std::optional<Serpent::ObjectLayout> Serpent::ObjectLayout::Of(std::initializer_list<NamedLayout> init) {
+std::shared_ptr<Serpent::ObjectLayout> Serpent::ObjectLayout::Of(std::initializer_list<NamedLayout> init) {
     size_t offset = 0;
     std::vector<ObjectLayout::Field> fields {};
     std::unordered_map<Serpent::InternedString, size_t> indices;
@@ -208,7 +224,7 @@ std::optional<Serpent::ObjectLayout> Serpent::ObjectLayout::Of(std::initializer_
         auto name = field.Name();
 
         if (indices.contains(name))
-            return std::nullopt;
+            return nullptr;
 
         indices.insert({name, fields.size()});
 
@@ -224,7 +240,7 @@ std::optional<Serpent::ObjectLayout> Serpent::ObjectLayout::Of(std::initializer_
 
     size = (offset + align - 1) & ~(align - 1);
 
-    return ObjectLayout(fields, indices, size, align);
+    return std::shared_ptr<ObjectLayout>(new ObjectLayout(fields, indices, size, align));
 }
 
 size_t Serpent::ObjectLayout::Size() const {
@@ -235,11 +251,59 @@ size_t Serpent::ObjectLayout::Align() const {
     return align;
 };
 
-void Serpent::ObjectLayout::DefaultInitialize(void *data) const {
-    for (auto const &field : fields) {
-        std::println("Field {}", field.layout.Name());
-        Serpent::DefaultInitialize(field.layout.Layout(), reinterpret_cast<void *>(size_t(data) + field.offset));
+void Serpent::ObjectLayout::Initialize(void *root) const {
+    for (auto &field : fields)
+        DefaultInitialize(field.layout.Layout(), reinterpret_cast<void *>(reinterpret_cast<size_t>(root) + field.offset));
+}
+
+Serpent::TupleLayout::TupleLayout(
+    std::vector<Field> fields,
+    size_t size,
+    size_t align
+) :
+    fields(fields),
+    size(size),
+    align(align)
+{}
+
+std::shared_ptr<Serpent::TupleLayout> Serpent::TupleLayout::Of(std::initializer_list<ValueLayout> init) {
+    size_t offset = 0;
+    std::vector<TupleLayout::Field> fields {};
+    size_t size = 0;
+    size_t align = 1;
+
+    for (auto const &layout : init) {
+        size_t const fieldAlign = GetAlign(layout);
+        size_t const fieldSize  = GetSize(layout);
+
+        offset = (offset + fieldAlign - 1) & ~(fieldAlign - 1);
+
+        fields.emplace_back(TupleLayout::Field {
+            .layout = layout,
+            .offset = offset
+        });
+
+        align = std::max(align, fieldAlign);
+
+        offset += fieldSize;
     }
+
+    size = (offset + align - 1) & ~(align - 1);
+
+    return std::shared_ptr<TupleLayout>(new TupleLayout(fields, size, align));
+}
+
+size_t Serpent::TupleLayout::Size() const {
+    return size;
+};
+
+size_t Serpent::TupleLayout::Align() const {
+    return align;
+};
+
+void Serpent::TupleLayout::Initialize(void *root) const {
+    for (auto &field : fields)
+        DefaultInitialize(field.layout, reinterpret_cast<void *>(reinterpret_cast<size_t>(root) + field.offset));
 }
 
 Serpent::VariantLayout::VariantLayout(
@@ -258,7 +322,7 @@ Serpent::VariantLayout::VariantLayout(
     align(align)
 {}
 
-std::optional<Serpent::VariantLayout> Serpent::VariantLayout::Of(std::initializer_list<NamedLayout> init, std::optional<std::string_view> variantFieldName) {
+std::shared_ptr<Serpent::VariantLayout> Serpent::VariantLayout::Of(std::initializer_list<NamedLayout> init, std::optional<std::string_view> variantFieldName) {
     std::vector<NamedLayout> variants {init};
     std::unordered_map<InternedString, size_t> indices;
     size_t size = 0;
@@ -282,13 +346,12 @@ std::optional<Serpent::VariantLayout> Serpent::VariantLayout::Of(std::initialize
     for (size_t i = 0; i < variants.size(); i++) {
         auto const &variant = variants[i];
         auto const &layout = variant.Layout();
-        size_t const variantAlign = GetAlign(layout);
         size_t const variantSize  = GetSize(layout);
 
         InternedString name = variant.Name();
 
         if (indices.contains(name))
-            return std::nullopt;
+            return nullptr;
 
         size = std::max(size, variantSize);
 
@@ -297,7 +360,7 @@ std::optional<Serpent::VariantLayout> Serpent::VariantLayout::Of(std::initialize
 
     size = (size + align - 1) & ~(align - 1);
 
-    return VariantLayout(variants, indices, variantFieldName, tagSize, size, align);
+    return std::shared_ptr<VariantLayout>(new VariantLayout(variants, indices, variantFieldName, tagSize, size, align));
 }
 
 size_t Serpent::VariantLayout::Size() const {
@@ -308,57 +371,66 @@ size_t Serpent::VariantLayout::Align() const {
     return align;
 }
 
-void Serpent::VariantLayout::DefaultInitialize(void *data) const {
+void Serpent::VariantLayout::Initialize(void *root) const {
     switch (tagSize) {
         case 1:
-            *reinterpret_cast<uint8_t *>(data) = 0;
+            DefaultInitialize(IntegralLayout::UInt8, root);
             break;
         case 2:
-            *reinterpret_cast<uint16_t *>(data) = 0;
+            DefaultInitialize(IntegralLayout::UInt16, root);
             break;
         case 4:
-            *reinterpret_cast<uint32_t *>(data) = 0;
+            DefaultInitialize(IntegralLayout::UInt32, root);
             break;
         case 8:
-            *reinterpret_cast<uint64_t *>(data) = 0;
+            DefaultInitialize(IntegralLayout::UInt64, root);
             break;
+        default:
+            std::unreachable();
     }
 
-    if (variants.empty())
-        return;
-
-    Serpent::DefaultInitialize(variants[0].Layout(), reinterpret_cast<void *>(size_t(data) + align));
+    DefaultInitialize(variants[0].Layout(), reinterpret_cast<void *>(reinterpret_cast<size_t>(root) + align));
 }
 
 Serpent::ArrayLayout::ArrayLayout(Serpent::ValueLayout &&layout) :
-    layout(std::make_unique<ValueLayout>(layout))
+    layout(layout)
 {}
 
 Serpent::ArrayLayout::ArrayLayout(Serpent::ArrayLayout const &copy) :
-    layout(std::make_unique<ValueLayout>(*copy.layout))
+    layout(copy.layout)
 {}
 
-Serpent::ArrayLayout Serpent::ArrayLayout::Of(ValueLayout &&layout) {
-    return ArrayLayout(std::move(layout));
+std::shared_ptr<Serpent::ArrayLayout> Serpent::ArrayLayout::Of(ValueLayout &&layout) {
+    return std::shared_ptr<Serpent::ArrayLayout>(new ArrayLayout(std::move(layout)));
 }
 
 Serpent::ValueLayout const &Serpent::ArrayLayout::Layout() const {
-    return *layout;
+    return layout;
 }
 
-bool Serpent::ArrayLayout::operator == (ArrayLayout const &rhs) const {
-    if (this == &rhs)
-        return true;
-
-    return Layout() == rhs.Layout();
+size_t Serpent::ArrayLayout::Align() const {
+    return std::max<size_t>(8, GetAlign(layout));
 }
 
-void Serpent::ArrayLayout::DefaultInitialize(void *data) const {
-    Backing *backing = reinterpret_cast<Backing *>(data);
+Serpent::GcValue *Serpent::ArrayLayout::New(size_t size) const {
+    GcValue *value = GcValue::New(size, shared_from_this());
 
-    backing->data = 0;
-    backing->capacity = 0;
-    backing->size = 0;
+    void *root = value->Data();
+
+    size_t align = Align();
+
+    *reinterpret_cast<size_t *>(root) = size;
+
+    root = reinterpret_cast<void *>(reinterpret_cast<size_t>(root) + align);
+
+    size_t elemSize = GetSize(layout);
+
+    size_t elemCount = (size - align) / elemSize;
+
+    for (size_t i = 0; i < elemCount; i++)
+        DefaultInitialize(layout, reinterpret_cast<void *>(reinterpret_cast<size_t>(root) + i * elemSize));
+
+    return value;
 }
 
 Serpent::EnumLayout::EnumLayout(
@@ -370,21 +442,20 @@ Serpent::EnumLayout::EnumLayout(
     names(names)
 {}
 
-std::optional<Serpent::EnumLayout> Serpent::EnumLayout::Of(std::initializer_list<std::string_view> names, IntegralLayout backing) {
+std::shared_ptr<Serpent::EnumLayout> Serpent::EnumLayout::Of(std::initializer_list<std::string_view> names, IntegralLayout backing) {
     std::vector<InternedString> values;
     std::unordered_map<InternedString, size_t> indices;
 
-    for (size_t i = 0; i < values.size(); i++) {
-        auto name = values[i];
-
+    for (auto name : names) {
         if (indices.contains(name))
-            return std::nullopt;
+            return nullptr;
         
         values.emplace_back(name);
-        indices.emplace(name, i);
+        indices.emplace(name, values.size());
+        values.push_back(name);
     }
 
-    return EnumLayout(backing, values, indices);
+    return std::shared_ptr<EnumLayout>(new EnumLayout(backing, values, indices));
 }
 
 Serpent::IntegralLayout Serpent::EnumLayout::Backing() const {
@@ -393,7 +464,7 @@ Serpent::IntegralLayout Serpent::EnumLayout::Backing() const {
 
 Serpent::NamedLayout::NamedLayout(
     std::string_view name,
-    ValueLayout &&layout
+    ValueLayout layout
 ) :
     name(name),
     layout(layout)
