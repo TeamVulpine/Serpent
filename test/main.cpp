@@ -1,6 +1,9 @@
+#include <array>
 #include <cassert>
 #include <print>
+#include <span>
 #include "serpent/layout.hpp"
+#include "serpent/types/rc_array.hpp"
 
 const auto ColorLayout = Serpent::EnumLayout::Of({
     "Red",
@@ -29,6 +32,21 @@ const auto TestLayout = Serpent::ObjectLayout::Of({
     {"position", Vec3fLayout} // offset 40 size 8
 }).value(); // Size 48 align 8
 
+void test(std::span<int const> span) {
+    for (auto const &value : span) {
+        std::println("{}", value);
+    }
+}
+
 int main(int argc, char **argv) {
+    {
+        std::array<int, 6> ca = {
+            0, 1, 2, 3, 4, 5
+        };
+        Serpent::RcArray<int> ia = Serpent::RcArray<int>::Create(ca);
+
+        test(ia);
+    }
+
     return 0;
 }

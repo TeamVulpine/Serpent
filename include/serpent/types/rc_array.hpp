@@ -19,7 +19,7 @@ namespace Serpent {
         private:
         struct SERPENT_API Inner final {
             std::atomic_size_t refCount = 1;
-            T const Data[];
+            T data[];
 
             Inner() = default;
 
@@ -33,22 +33,22 @@ namespace Serpent {
         };
 
         Inner *inner;
-        size_t size;
+        size_t len;
 
         RcArray(Inner *inner, size_t size) :
             inner(inner),
-            size(size)
+            len(size)
         {}
 
         public:
         RcArray(RcArray const &copy) :
-            RcArray(copy.inner, copy.size)
+            RcArray(copy.inner, copy.len)
         {
             inner->AddRef();
         }
 
         RcArray(RcArray &&move) :
-            RcArray(move.inner, move.size)
+            RcArray(move.inner, move.len)
         {
             move.inner = nullptr;
         }
@@ -58,8 +58,8 @@ namespace Serpent {
                 return;
 
             if (inner->RemoveRef()) {
-                T *dataMut = const_cast<T *>(inner->Data);
-                for (size_t i = 0; i < size; i++)
+                T *dataMut = const_cast<T *>(inner->data);
+                for (size_t i = 0; i < len; i++)
                     dataMut[i].~T();
 
                 inner->~Inner();
@@ -68,7 +68,7 @@ namespace Serpent {
             }
 
             inner = nullptr;
-            size = 0;
+            len = 0;
         }
 
         static RcArray Create(std::span<T> init) {
@@ -78,7 +78,7 @@ namespace Serpent {
             bytes = (bytes + align - 1) & ~(align - 1);
             Inner *inner = new (::operator new(bytes, std::align_val_t(align))) Inner;
 
-            T *data = const_cast<T *>(inner->Data);
+            T *data = const_cast<T *>(inner->data);
             size_t i = 0;
             for (T const &val : init) {
                 new (&data[i]) T(val);
@@ -95,7 +95,7 @@ namespace Serpent {
             bytes = (bytes + align - 1) & ~(align - 1);
             Inner *inner = new (::operator new(bytes, std::align_val_t(align))) Inner;
 
-            T *data = const_cast<T *>(inner->Data);
+            T *data = const_cast<T *>(inner->data);
             size_t i = 0;
             for (T const &val : init) {
                 new (&data[i]) T(val);
@@ -106,22 +106,20 @@ namespace Serpent {
         }
 
         T const &operator [] (size_t index) const {
-            
-            
-            assert(index < size);
+            assert(index < len);
 
-            return inner->Data[index];
+            return inner->data[index];
         }
 
         bool operator == (RcArray const &other) const requires std::equality_comparable<T> {
             if (inner == other.inner)
                 return true;
             
-            if (size != other.size)
+            if (len != other.len)
                 return false;
 
-            for (size_t i = 0; i < size; i++) {
-                if (inner->Data[i] != other.inner->Data[i])
+            for (size_t i = 0; i < len; i++) {
+                if (inner->data[i] != other.inner->data[i])
                     return false;
             }
 
@@ -134,6 +132,18 @@ namespace Serpent {
 
         bool PointerEq(RcArray const &other) const {
             return inner == other.inner;
+        }
+
+        size_t size() const {
+            return len;
+        }
+
+        T const *begin() const {
+            return inner->data;
+        }
+
+        T const *end() const {
+            return inner->data + len;
         }
     };
 }
