@@ -6,8 +6,8 @@
 #include <string_view>
 #include <unordered_map>
 
-#include "api.hpp"
-#include "freelist.hpp"
+#include "serpent/api.hpp"
+#include "serpent/types/freelist.hpp"
 
 namespace Serpent {
     struct SERPENT_API Interner final {

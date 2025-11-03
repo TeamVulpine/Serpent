@@ -10,12 +10,11 @@
 #include <variant>
 #include <vector>
 
-#include "api.hpp"
-#include "interner.hpp"
+#include "serpent/api.hpp"
+#include "serpent/types/interner.hpp"
+#include "serpent/types/rc.hpp"
 
 namespace Serpent {
-    struct GcValue;
-
     enum struct IntegralLayout : uint8_t {
         Bool,
         UInt8,
@@ -40,7 +39,17 @@ namespace Serpent {
         Unit,
     };
 
-    struct GcLayout;
+    struct ObjectLayout;
+    struct TupleLayout;
+    struct VariantLayout;
+
+    using GcLayout = std::variant<
+        ObjectLayout,
+        TupleLayout,
+        VariantLayout
+    >;
+
+    struct ArrayLayout;
     struct EnumLayout;
 
     struct NamedLayout;
@@ -49,8 +58,9 @@ namespace Serpent {
         IntegralLayout,
         FloatingLayout,
         PrimitiveLayout,
-        std::shared_ptr<EnumLayout const>,
-        std::shared_ptr<GcLayout const>
+        ArrayLayout,
+        Rc<EnumLayout const>,
+        Rc<GcLayout const>
     >;
 
     SERPENT_API void DefaultInitialize(ValueLayout const &layout, void *value);
@@ -58,22 +68,7 @@ namespace Serpent {
     SERPENT_API size_t GetSize(ValueLayout const &layout);
     SERPENT_API size_t GetAlign(ValueLayout const &layout);
 
-    class GcLayout : public std::enable_shared_from_this<GcLayout> {
-        public:
-        virtual size_t Align() const = 0;
-
-        virtual GcValue *New(size_t size) const = 0;
-    };
-
-    class SizedGcLayout : public GcLayout {
-        public:
-        virtual size_t Size() const = 0;
-
-        GcValue *New(size_t size) const override final;
-        virtual void Initialize(void *root) const = 0;
-    };
-
-    struct SERPENT_API ObjectLayout final : public SizedGcLayout {
+    struct SERPENT_API ObjectLayout final {
         private:
         struct Field;
 
@@ -90,16 +85,18 @@ namespace Serpent {
         );
         
         public:
-        /// Returns nullptr if there are duplicated field names
-        static std::shared_ptr<ObjectLayout> Of(std::initializer_list<NamedLayout> fields); 
+        /// Returns nullopt if there are duplicated field names
+        static std::optional<Rc<GcLayout const>> Of(std::initializer_list<NamedLayout> fields); 
 
-        size_t Size() const override;
-        size_t Align() const override;
+        size_t Size() const;
+        size_t Align() const;
 
-        void Initialize(void *root) const override;
+        void Initialize(void *root) const;
+
+        bool operator == (ObjectLayout const &other) const = default;
     };
 
-    struct SERPENT_API TupleLayout final : public SizedGcLayout {
+    struct SERPENT_API TupleLayout final {
         private:
         struct Field;
 
@@ -114,15 +111,17 @@ namespace Serpent {
         );
         
         public:
-        static std::shared_ptr<TupleLayout> Of(std::initializer_list<ValueLayout> fields); 
+        static Rc<GcLayout const> Of(std::initializer_list<ValueLayout> fields); 
 
-        size_t Size() const override;
-        size_t Align() const override;
+        size_t Size() const;
+        size_t Align() const;
 
-        void Initialize(void *root) const override;
+        void Initialize(void *root) const;
+
+        bool operator == (TupleLayout const &other) const = default;
     };
 
-    struct SERPENT_API VariantLayout final : public SizedGcLayout {
+    struct SERPENT_API VariantLayout final {
         private:
         std::vector<NamedLayout> variants;
         std::unordered_map<InternedString, size_t> indices;
@@ -141,34 +140,34 @@ namespace Serpent {
         );
         
         public:
-        /// Returns nullptr if there are duplicated field names
+        /// Returns nullopt if there are duplicated field names
         /// if variantFieldName is nullopt, it uses the name of the variant as a key
         /// `{"SomeVariant": 5}` vs `{"type": "SomeVariant", "value": 5}`
-        static std::shared_ptr<VariantLayout> Of(std::initializer_list<NamedLayout> fields, std::optional<std::string_view> variantFieldName = std::nullopt);
+        static std::optional<Rc<GcLayout const>> Of(std::initializer_list<NamedLayout> fields, std::optional<std::string_view> variantFieldName = std::nullopt);
 
-        size_t Size() const override;
-        size_t Align() const override;
+        size_t Size() const;
+        size_t Align() const;
 
-        void Initialize(void *root) const override;
+        void Initialize(void *root) const;
+
+        bool operator == (VariantLayout const &other) const = default;
     };
 
-    struct SERPENT_API ArrayLayout final : public GcLayout {
+    struct SERPENT_API ArrayLayout final {
         private:
-        ValueLayout layout;
+        std::unique_ptr<ValueLayout> layout;
 
         ArrayLayout(ValueLayout &&layout);
-        
+
         public:
         ArrayLayout(ArrayLayout &&move) = default;
         ArrayLayout(ArrayLayout const &copy);
 
-        static std::shared_ptr<ArrayLayout> Of(ValueLayout &&layout);
+        static ArrayLayout Of(ValueLayout &&layout);
 
         ValueLayout const &Layout() const;
 
-        size_t Align() const override;
-
-        GcValue *New(size_t size) const override;
+        bool operator == (ArrayLayout const &other) const;
     };
 
     struct SERPENT_API EnumLayout final {
@@ -184,10 +183,12 @@ namespace Serpent {
         );
 
         public:
-        /// Returns nullptr if there are duplicated field names
-        static std::shared_ptr<EnumLayout> Of(std::initializer_list<std::string_view> names, IntegralLayout backing = IntegralLayout::UInt32);
+        /// Returns nullopt if there are duplicated field names
+        static std::optional<Rc<EnumLayout const>> Of(std::initializer_list<std::string_view> names, IntegralLayout backing = IntegralLayout::UInt32);
 
         IntegralLayout Backing() const;
+
+        bool operator == (EnumLayout const &other) const = default;
     };
 
     struct SERPENT_API NamedLayout final {

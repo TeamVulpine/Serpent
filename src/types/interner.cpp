@@ -4,7 +4,7 @@
 #include <shared_mutex>
 #include <string_view>
 
-#include "serpent/interner.hpp"
+#include "serpent/types/interner.hpp"
 
 Serpent::Interner::Interner() {}
 

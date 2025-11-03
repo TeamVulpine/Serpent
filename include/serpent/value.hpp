@@ -1,48 +1,83 @@
 #pragma once
 
-#include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
-#include <mutex>
-#include <shared_mutex>
+#include <optional>
+#include <string_view>
+#include <sys/types.h>
+#include <variant>
+
+#include "serpent/api.hpp"
+#include "serpent/types/interner.hpp"
 #include "serpent/layout.hpp"
 
 namespace Serpent {
-    struct SERPENT_API GcValue final {
+    struct GcHandle;
+    struct ArrayHandle;
+
+    using Handle = std::variant<
+        std::monostate,
+        std::nullopt_t,
+        int8_t,
+        uint8_t,
+        int16_t,
+        uint16_t,
+        int32_t,
+        uint32_t,
+        int64_t,
+        uint64_t,
+        float,
+        double,
+        InternedString,
+        GcHandle,
+        ArrayHandle
+    >;
+
+    struct GcValue;
+
+    struct SERPENT_API GcHandle final {
         private:
-        std::shared_ptr<GcLayout const> layout;
-        std::atomic_size_t refCount = 1;
-        /// MR1W lock used for accessing underlying data
-        std::shared_mutex dataMutex {};
-        
-        void *operator new(std::size_t) = delete;
-        void  operator delete(void *) = delete;
+        GcValue *value;
 
-        void *operator new[](std::size_t) = delete;
-        void  operator delete[](void *) = delete;
-        
+        GcHandle(GcValue *value);
+
         public:
-        GcValue(std::shared_ptr<GcLayout const> layout);
+        ~GcHandle();
 
-        static inline GcValue *New(size_t size, std::shared_ptr<GcLayout const> layout) {
-            GcValue *value = reinterpret_cast<GcValue *>(malloc(sizeof(GcValue) + size));
+        static GcHandle Create(std::shared_ptr<GcLayout const> &layout);
+        static GcHandle FromRaw(GcValue *SERPENT_NONNULL raw);
 
-            new (&value->layout) std::shared_ptr(layout);
-            new (&value->refCount) std::atomic_size_t(0);
-            new (&value->dataMutex) std::shared_mutex;
+        Handle Get(std::string_view key);
+        Handle Get(size_t index);
 
-            return value;
-        }
+        bool Set(std::string_view key, Handle value);
+        bool Set(size_t index, Handle value);
 
-        inline std::shared_lock<std::shared_mutex> Read() {
-            return std::shared_lock(dataMutex);
-        }
+        /// Leaks the value into a raw GcValue pointer. To reacquire the value, call FromRaw
+        GcValue *SERPENT_NONNULL IntoRaw();
+    };
 
-        inline std::unique_lock<std::shared_mutex> Write() {
-            return std::unique_lock(dataMutex);
-        }
+    struct ArrayValue;
 
-        inline void *Data() const {
-            return reinterpret_cast<void *>(reinterpret_cast<size_t>(this) + sizeof(GcValue));
-        }
-    }; 
+    struct SERPENT_API ArrayHandle final {
+        private:
+        ArrayValue *value;
+
+        ArrayHandle(ArrayValue *value);
+
+        public:
+        ~ArrayHandle();
+
+        static ArrayHandle Create(ArrayLayout &layout);
+        static GcHandle FromRaw(ArrayValue *SERPENT_NONNULL raw);
+
+        size_t Length();
+
+        Handle Get(size_t index);
+
+        bool Set(size_t index, Handle value);
+        /// Leaks the value into a raw ArrayValue pointer. To reacquire the value, call FromRaw
+        ArrayValue *SERPENT_NONNULL IntoRaw();
+    };
 }

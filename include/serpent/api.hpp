@@ -13,3 +13,9 @@
 #else
     #define SERPENT_API
 #endif
+
+#if defined(__clang__)
+#define SERPENT_NONNULL _Nonnull
+#else
+#define SERPENT_NONNULL
+#endif
