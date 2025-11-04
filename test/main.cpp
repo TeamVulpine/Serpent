@@ -2,7 +2,10 @@
 #include <cassert>
 #include <print>
 #include <span>
+#include <unordered_map>
 #include "serpent/layout.hpp"
+#include "serpent/types/interned_map.hpp"
+#include "serpent/types/interner.hpp"
 #include "serpent/types/rc_array.hpp"
 
 const auto ColorLayout = Serpent::EnumLayout::Of({
@@ -39,6 +42,16 @@ void test(std::span<int const> span) {
 }
 
 int main(int argc, char **argv) {
+    std::unordered_map<Serpent::InternedString, int> stoi {};
+    stoi.insert({Serpent::InternedString("key"), 1});
+    stoi.insert({Serpent::InternedString("key2"), 2});
+    stoi.insert({Serpent::InternedString("key3"), 3});
+
+    Serpent::InternedMap<int> stoi2 = Serpent::InternedMap<int>::Create(stoi);
+
+    if (auto p = stoi2.Get("key"))
+        std::println("{}", *p);
+
     {
         std::array<int, 6> ca = {
             0, 1, 2, 3, 4, 5

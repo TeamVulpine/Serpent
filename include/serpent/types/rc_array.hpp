@@ -19,7 +19,6 @@ namespace Serpent {
         private:
         struct SERPENT_API Inner final {
             std::atomic_size_t refCount = 1;
-            T data[];
 
             Inner() = default;
 
@@ -29,6 +28,10 @@ namespace Serpent {
 
             bool RemoveRef() {
                 return refCount.fetch_sub(1) == 1;
+            }
+
+            T const *Data() const {
+                return reinterpret_cast<T const *>(reinterpret_cast<size_t>(this) + sizeof(Inner));
             }
         };
 
@@ -58,7 +61,7 @@ namespace Serpent {
                 return;
 
             if (inner->RemoveRef()) {
-                T *dataMut = const_cast<T *>(inner->data);
+                T *dataMut = const_cast<T *>(inner->Data());
                 for (size_t i = 0; i < len; i++)
                     dataMut[i].~T();
 
@@ -78,7 +81,7 @@ namespace Serpent {
             bytes = (bytes + align - 1) & ~(align - 1);
             Inner *inner = new (::operator new(bytes, std::align_val_t(align))) Inner;
 
-            T *data = const_cast<T *>(inner->data);
+            T *data = const_cast<T *>(inner->Data());
             size_t i = 0;
             for (T const &val : init) {
                 new (&data[i]) T(val);
@@ -95,7 +98,7 @@ namespace Serpent {
             bytes = (bytes + align - 1) & ~(align - 1);
             Inner *inner = new (::operator new(bytes, std::align_val_t(align))) Inner;
 
-            T *data = const_cast<T *>(inner->data);
+            T *data = const_cast<T *>(inner->Data());
             size_t i = 0;
             for (T const &val : init) {
                 new (&data[i]) T(val);
@@ -108,7 +111,7 @@ namespace Serpent {
         T const &operator [] (size_t index) const {
             assert(index < len);
 
-            return inner->data[index];
+            return inner->Data()[index];
         }
 
         bool operator == (RcArray const &other) const requires std::equality_comparable<T> {
@@ -119,7 +122,7 @@ namespace Serpent {
                 return false;
 
             for (size_t i = 0; i < len; i++) {
-                if (inner->data[i] != other.inner->data[i])
+                if (inner->Data()[i] != other.inner->Data()[i])
                     return false;
             }
 
@@ -139,11 +142,11 @@ namespace Serpent {
         }
 
         T const *begin() const {
-            return inner->data;
+            return inner->Data();
         }
 
         T const *end() const {
-            return inner->data + len;
+            return inner->Data() + len;
         }
     };
 }

@@ -46,7 +46,7 @@ size_t Serpent::Interner::Acquire(std::string_view view) {
 
     if (indices.contains(view)) {
         lock.unlock();
-        return AddRef(indices[view]);
+        return AddRef(indices[view] + 1);
     }
 
     size_t idx = strings.Push(view);
