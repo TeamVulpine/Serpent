@@ -114,7 +114,7 @@ namespace Serpent {
             return inner->Data()[index];
         }
 
-        bool operator == (RcArray const &other) const requires std::equality_comparable<T> {
+        bool operator == (RcArray const &other) const {
             if (inner == other.inner)
                 return true;
             
@@ -129,7 +129,7 @@ namespace Serpent {
             return true;
         }
 
-        bool operator != (RcArray const &other) const requires std::equality_comparable<T> {
+        bool operator != (RcArray const &other) const {
             return !(*this == other);
         }
 

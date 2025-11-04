@@ -14,7 +14,9 @@
 #include <vector>
 
 #include "serpent/layout.hpp"
+#include "serpent/types/interned_map.hpp"
 #include "serpent/types/interner.hpp"
+#include "serpent/types/rc_array.hpp"
 
 void Serpent::DefaultInitialize(Serpent::ValueLayout const &layout, void *ptr) {
     std::visit(
@@ -185,8 +187,8 @@ size_t Serpent::GetAlign(ValueLayout const &layout) {
 }
 
 Serpent::ObjectLayout::ObjectLayout(
-    std::vector<Field> fields,
-    std::unordered_map<Serpent::InternedString, size_t> indices,
+    Serpent::RcArray<Field> fields,
+    Serpent::InternedMap<size_t> indices,
     size_t size,
     size_t align
 ) :
@@ -229,7 +231,7 @@ std::optional<Serpent::Rc<Serpent::GcLayout const>> Serpent::ObjectLayout::Of(st
 
     size = (offset + align - 1) & ~(align - 1);
 
-    return Rc<GcLayout const>::Create(ObjectLayout(fields, indices, size, align));
+    return Rc<GcLayout const>::Create(ObjectLayout(Serpent::RcArray<Field>::Create(fields), InternedMap<size_t>::Create(indices), size, align));
 }
 
 size_t Serpent::ObjectLayout::Size() const {
@@ -246,7 +248,7 @@ void Serpent::ObjectLayout::Initialize(void *root) const {
 }
 
 Serpent::TupleLayout::TupleLayout(
-    std::vector<Field> fields,
+    Serpent::RcArray<Field> fields,
     size_t size,
     size_t align
 ) :
@@ -279,7 +281,7 @@ Serpent::Rc<Serpent::GcLayout const> Serpent::TupleLayout::Of(std::initializer_l
 
     size = (offset + align - 1) & ~(align - 1);
 
-    return Rc<GcLayout const>::Create(TupleLayout(fields, size, align));
+    return Rc<GcLayout const>::Create(TupleLayout(Serpent::RcArray<Field>::Create(fields), size, align));
 }
 
 size_t Serpent::TupleLayout::Size() const {
@@ -296,8 +298,8 @@ void Serpent::TupleLayout::Initialize(void *root) const {
 }
 
 Serpent::VariantLayout::VariantLayout(
-    std::vector<NamedLayout> variants,
-    std::unordered_map<InternedString, size_t> indices,
+    Serpent::RcArray<NamedLayout> variants,
+    Serpent::InternedMap<size_t> indices,
     std::optional<InternedString> variantFieldName,
     size_t tagSize,
     size_t size,
@@ -349,7 +351,7 @@ std::optional<Serpent::Rc<Serpent::GcLayout const>> Serpent::VariantLayout::Of(s
 
     size = (size + align - 1) & ~(align - 1);
 
-    return Rc<GcLayout const>::Create(VariantLayout(variants, indices, variantFieldName, tagSize, size, align));
+    return Rc<GcLayout const>::Create(VariantLayout(Serpent::RcArray<NamedLayout>::Create(variants), InternedMap<size_t>::Create(indices), variantFieldName, tagSize, size, align));
 }
 
 size_t Serpent::VariantLayout::Size() const {
@@ -406,11 +408,12 @@ bool Serpent::ArrayLayout::operator == (ArrayLayout const &other) const {
 
 Serpent::EnumLayout::EnumLayout(
     IntegralLayout backing,
-    std::vector<InternedString> names,
-    std::unordered_map<InternedString, size_t> indices
+    Serpent::RcArray<InternedString> names,
+    Serpent::InternedMap<size_t> indices
 ) :
     backing(backing),
-    names(names)
+    names(names),
+    indices(indices)
 {}
 
 std::optional<Serpent::Rc<Serpent::EnumLayout const>> Serpent::EnumLayout::Of(std::initializer_list<std::string_view> names, IntegralLayout backing) {
@@ -426,7 +429,7 @@ std::optional<Serpent::Rc<Serpent::EnumLayout const>> Serpent::EnumLayout::Of(st
         values.push_back(name);
     }
 
-    return Rc<EnumLayout const>::Create(EnumLayout(backing, values, indices));
+    return Rc<EnumLayout const>::Create(EnumLayout(backing, Serpent::RcArray<InternedString>::Create(values), InternedMap<size_t>::Create(indices)));
 }
 
 Serpent::IntegralLayout Serpent::EnumLayout::Backing() const {

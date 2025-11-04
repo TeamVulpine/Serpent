@@ -6,13 +6,13 @@
 #include <memory>
 #include <optional>
 #include <string_view>
-#include <unordered_map>
 #include <variant>
-#include <vector>
 
 #include "serpent/api.hpp"
+#include "serpent/types/interned_map.hpp"
 #include "serpent/types/interner.hpp"
 #include "serpent/types/rc.hpp"
+#include "serpent/types/rc_array.hpp"
 
 namespace Serpent {
     enum struct IntegralLayout : uint8_t {
@@ -72,14 +72,14 @@ namespace Serpent {
         private:
         struct Field;
 
-        std::vector<Field> fields;
-        std::unordered_map<InternedString, size_t> indices;
+        RcArray<Field> fields;
+        InternedMap<size_t> indices;
         size_t size;
         size_t align;
 
         ObjectLayout(
-            std::vector<Field> fields,
-            std::unordered_map<InternedString, size_t> indices,
+            RcArray<Field> fields,
+            InternedMap<size_t> indices,
             size_t size,
             size_t align
         );
@@ -100,12 +100,12 @@ namespace Serpent {
         private:
         struct Field;
 
-        std::vector<Field> fields;
+        RcArray<Field> fields;
         size_t size;
         size_t align;
 
         TupleLayout(
-            std::vector<Field> fields,
+            RcArray<Field> fields,
             size_t size,
             size_t align
         );
@@ -123,16 +123,16 @@ namespace Serpent {
 
     struct SERPENT_API VariantLayout final {
         private:
-        std::vector<NamedLayout> variants;
-        std::unordered_map<InternedString, size_t> indices;
+        RcArray<NamedLayout> variants;
+        InternedMap<size_t> indices;
         std::optional<InternedString> variantFieldName;
         size_t tagSize;
         size_t size;
         size_t align;
 
         VariantLayout(
-            std::vector<NamedLayout> variants,
-            std::unordered_map<InternedString, size_t> indices,
+            RcArray<NamedLayout> variants,
+            InternedMap<size_t> indices,
             std::optional<InternedString> variantFieldName,
             size_t tagSize,
             size_t size,
@@ -173,13 +173,13 @@ namespace Serpent {
     struct SERPENT_API EnumLayout final {
         private:
         IntegralLayout backing;
-        std::vector<InternedString> names;
-        std::unordered_map<InternedString, size_t> indices;
+        RcArray<InternedString> names;
+        InternedMap<size_t> indices;
 
         EnumLayout(
             IntegralLayout backing,
-            std::vector<InternedString> names,
-            std::unordered_map<InternedString, size_t> indices
+            RcArray<InternedString> names,
+            InternedMap<size_t> indices
         );
 
         public:

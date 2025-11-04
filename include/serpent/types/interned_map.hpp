@@ -16,6 +16,9 @@ namespace Serpent {
         struct Node {
             InternedString key;
             TValue value;
+
+            bool operator == (Node const &other) const = default;
+            bool operator != (Node const &other) const = default;
         };
 
         RcArray<RcArray<Node>> buckets;
@@ -31,6 +34,9 @@ namespace Serpent {
         }
 
         public:
+        bool operator == (InternedMap const &other) const = default;
+        bool operator != (InternedMap const &other) const = default;
+
         static InternedMap Create(std::unordered_map<InternedString, TValue> const &from) {
             constexpr float Factor = 0.75f;
             size_t size = from.size();
